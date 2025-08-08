@@ -171,6 +171,11 @@
 /datum/status_effect/panicked_type/wander/cinderella
 	icon = "penitence"
 
+/datum/status_effect/panicked_type/wander/cinderella/tick()
+	. = ..()
+	var/mob/living/carbon/human/status_holder = owner
+	status_holder.emote("spin")
+
 /datum/ai_behavior/say_line/cinderella
 	lines = list(
 		"Care to join me?",

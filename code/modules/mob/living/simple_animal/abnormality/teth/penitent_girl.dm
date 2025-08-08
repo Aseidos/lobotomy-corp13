@@ -10,6 +10,7 @@
 // MAYBE GIVE HER A SPECIAL MELTDOWN EFFECT? PERHAPS TANKING MOOD.
 // INTERACTION WITH RED SHOES.
 // USE REMEMBERVAR FOR SILLIER THINGS (I trust in you Future Me)
+// MAKE A MANUAL STAT-GIVING PROC WHEN WORK IS PERFORMED ON HARDMODE
 /mob/living/simple_animal/hostile/abnormality/penitentgirl
 	name = "Penitent Girl"
 	desc = "A girl with hair flowing over her eyes."
@@ -44,10 +45,12 @@
 		// /mob/living/simple_animal/hostile/abnormality/pink_shoes = 3  Would be nice...
 	)
 
-	var/mood_level = 0// From 0 to max_mood_level
+	var/mood_level = 0// From min_mood_level to max_mood_level
 	var/min_mood_level = 0
 	var/max_mood_level = 6
 	var/mood = 0
+	var/min_mood = 0
+	var/max_mood = 2
 	var/mood_level_change = 0 // This var exists just so we dont call ChangeMood() one billion times
 
 	var/calmness_threshold = 5 // Equal or above this mood level, she is calm.
@@ -61,6 +64,8 @@
 
 	var/mob/living/carbon/human/haunted
 	var/datum/abnormality/the_shoes
+
+	var/remember
 	var/debug
 
 	observation_prompt = "A girl in front of you dances, stumbling to and fro. <br>\
@@ -74,28 +79,33 @@
 			The girl continues shifting about without a care in the world."),
 	)
 
-/mob/living/simple_animal/hostile/abnormality/penitentgirl/Initialize()
+/mob/living/simple_animal/hostile/abnormality/penitentgirl/PostSpawn()
 	. = ..()
-	mood = RememberVar(1)
+	// debug = datum_reference.transferable_var
+	// remember = RememberVar(1)
+	// if(!LAZYLEN(remember))
+	// 	CheckForShoes()
+	// 	return
+	mood = RememberVar("mood")
 	if(!mood)
 		mood = 0
 	InitializeMoodLevel() // We are initializing mood after getting obliterated.
-	desire = RememberVar(2)
+	desire = RememberVar("desire")
 	if(!desire)
-		CheckForShoes() // ARE THOSE FUCKING ACCURSED SHOES IN HERE???
-	the_shoes = RememberVar(3)
+		CheckForShoes() // ARE THOSE FUCKING ACURSED SHOES IN HERE???
+	the_shoes = RememberVar("red_shoes")
 	if(!the_shoes)
 		desire = FALSE // Just in case something went wrong.
 		return
 	Hardmode() // You, my friend, gonna have one extra HE abnormality.
 
-// /mob/living/simple_animal/hostile/abnormality/penitentgirl/PostSpawn()
-// 	. = ..()
-// 	mood = RememberVar(1)
-// 	if(mood)
-// 		InitializeMoodLevel() // We are initializing mood after getting obliterated.
 /mob/living/simple_animal/hostile/abnormality/penitentgirl/proc/Hardmode()
-	threat_level = HE_LEVEL
+	datum_reference.max_boxes = 18
+	min_mood = -1
+	min_mood_level = -2
+	max_mood_level = 5
+	tormented_threshold = 2
+	empathize_threshold = 60
 	// icon = agitated_penitent
 
 /mob/living/simple_animal/hostile/abnormality/penitentgirl/proc/OnAbnoSpawn(datum/source, datum/abnormality/abno)
@@ -116,9 +126,10 @@
 // 	return FALSE // NO MORE NUZZLES
 
 /mob/living/simple_animal/hostile/abnormality/penitentgirl/Destroy()
-	TransferVar(1, mood) // This is gonna get silly.
-	TransferVar(2, desire)
-	TransferVar(3, the_shoes)
+	// var/list/PenitentVars = list(mood, desire, the_shoes)
+	TransferVar("mood", mood) // This is gonna get silly.
+	TransferVar("desire", desire)
+	TransferVar("red_shoes", the_shoes)
 	return ..()
 
 /mob/living/simple_animal/hostile/abnormality/penitentgirl/proc/CheckForShoes()
@@ -133,7 +144,7 @@
 		RegisterSignal(SSdcs, COMSIG_GLOB_ABNORMALITY_SPAWN, PROC_REF(OnAbnoSpawn)) // If there are no Red Shoes, we still are wary of it arriving at any moment.
 
 /mob/living/simple_animal/hostile/abnormality/penitentgirl/proc/ShoeWarning()
-	sound_to_playing_players_on_level("sound/voice/human/femalescream_3.ogg", 70, zlevel = z) // Do not fucking say I did not warn you.
+	sound_to_playing_players_on_level("sound/voice/human/femalescream_3.ogg", 90, zlevel = z) // Do not fucking say I did not warn you.
 	for(var/mob/living/carbon/human/M in GLOB.player_list)
 		var/check_z = M.z
 		if(isatom(M.loc))
@@ -143,25 +154,36 @@
 
 //Work Mechanics
 /mob/living/simple_animal/hostile/abnormality/penitentgirl/AttemptWork(mob/living/carbon/human/user, work_type)
-	// Oh dear, you are empathizing with the abnormality.
-	if(get_attribute_level(user, TEMPERANCE_ATTRIBUTE) >= empathize_threshold && work_type == ABNORMALITY_WORK_ATTACHMENT)
-		work_damage_amount = user.maxSanity * (0.1 + (0.1 * mood)) // The more calm she is, the more she gets into your mind. (Max 40% of max Sanity as damage at max mood.)
+	switch(work_type)
+		if(ABNORMALITY_WORK_ATTACHMENT)
+			if(haunting)
+				to_chat(user, span_info("You cannot do this type of work while the abnormality is not present."))
+				return FALSE // You are talking to an empty cell idiot.
+			if(get_attribute_level(user, TEMPERANCE_ATTRIBUTE) >= empathize_threshold) // Stop being nice to the abno right NOW.
+				work_damage_amount = user.maxSanity * (0.1 + (0.1 * mood)) // The more calm she is, the more she gets into your mind. (Max 40% of max Sanity as damage at max mood.)
+		if(ABNORMALITY_WORK_INSTINCT)
+			if(haunting)
+				to_chat(user, span_info("You cannot do this type of work while the abnormality is not present."))
+				return FALSE // You are feeding an empty cell dummy.
+	/* My logic is that insight work can be cleaning the surroundings of the abnormality, not needing the abnormality to be necessarily present (but being a ghost, it still reacts and produces PE.)
+	While repression work can be increasing the qliphoth supression or other esoteric procedures (repression is the weirdest work type in-lore) that again, do not necessarily require the abnormality physically present */
 	return TRUE
 
 /mob/living/simple_animal/hostile/abnormality/penitentgirl/PostWorkEffect(mob/living/carbon/human/user, work_type, pe, work_time)
 	work_damage_amount = initial(work_damage_amount)
 	if((get_attribute_level(user, TEMPERANCE_ATTRIBUTE) < empathize_threshold) && (get_attribute_level(user, PRUDENCE_ATTRIBUTE) < empathize_threshold))
-		ChangeMood(-(calmness_threshold - 1)) // Brother in Christ, you are cooked. (If she is in Neutral, she is going to go straight to Tormented)
+		ChangeMood(-(calmness_threshold)) // Brother in Christ, you are cooked.
+		if(StartHaunting(user))
+			user.adjustSanityLoss(400) // PENITENT BLAST!
 		datum_reference.qliphoth_change(-999)
-		user.adjustSanityLoss(400) // PENITENT BLAST!
-		if(!haunting) // Sometimes ZeroQliphoth gets fucky, this is just to make sure we attach to "someone"
-			StartHaunting(user)
 		return
 	ChangeMood(mood_level_change)
 	switch(work_type) // Boss, I am tired of using switch statements.
 		if(ABNORMALITY_WORK_INSIGHT)
 			if(haunting)
-				haunted.adjustSanityLoss(-20)
+				haunted.adjustSanityLoss(-25)
+				if(prob((mood + 1) * 15)) // 0% for mortified, 15% for tormented, 30% for neutral, 45% for good.
+					StopHaunting()
 		if(ABNORMALITY_WORK_ATTACHMENT)
 			if(!haunting)
 				qli_change -= 1
@@ -170,6 +192,7 @@
 				haunted.adjustSanityLoss(haunted.maxSanity * (0.5 - (mood * 0.1))) // Higher mood = less sanity damage.
 				StopHaunting()
 	datum_reference.qliphoth_change(qli_change)
+	qli_change = initial(qli_change)
 
 /mob/living/simple_animal/hostile/abnormality/penitentgirl/SuccessEffect(mob/living/carbon/human/user, work_type, pe)
 	. = ..()
@@ -200,21 +223,16 @@
 /mob/living/simple_animal/hostile/abnormality/penitentgirl/proc/ChangeMood(variable)
 	if(haunting)
 		return // Nuh uh
-	if(mood_level + variable >= max_mood_level)
-		mood_level = max_mood_level // She is calm
-		return
-	else if(mood + variable <= min_mood_level)
-		mood_level = min_mood_level // She is tormented
-		return
-	else
-		mood_level += variable
+	mood_level = clamp((mood_level + mood_level_change, min_mood_level, max_mood_level))
 	mood_level_change = initial(mood_level_change)
 	UpdateMoodEffects()
 
 /mob/living/simple_animal/hostile/abnormality/penitentgirl/proc/InitializeMoodLevel()
 	switch(mood)
+		if(-1) // Mortified
+			mood_level = min_mood_level
 		if(0) // Tormented
-			mood_level = 0
+			mood_level = mortified_threshold + 1
 		if(1) // Neutral
 			mood_level = tormented_threshold + 1
 		if(2) // Calm
@@ -226,23 +244,23 @@
 		mood = 2
 	else if(mood_level > tormented_threshold) // Neutral
 		mood = 1
-	else if(mood_level <= tormented_threshold && mood_level > mortified_threshold) // Tormented
+	else if(mood_level > mortified_threshold) // Tormented
 		mood = 0
-	else // Mortified, only reachable with Red Shoes on the facility.
+	else if(desire) // Mortified, only reachable with Red Shoes on the facility.
 		mood = -1
 	return
 
 // Breach Mechanics
 /mob/living/simple_animal/hostile/abnormality/penitentgirl/ZeroQliphoth(mob/living/carbon/human/user)
 	. = ..()
+	SEND_GLOBAL_SIGNAL(COMSIG_GLOB_ABNORMALITY_BREACH, src) // It's basically a breach, I just want people to be able to work while its ongoing.
 	if(!haunting)
-		SEND_GLOBAL_SIGNAL(COMSIG_GLOB_ABNORMALITY_BREACH, src) // It's basically a breach, I just want people to be able to work while its ongoing.
 		if(user)
 			StartHaunting(user)
 		else
 			var/list/potentialghostbearer = list()
 			for(var/mob/living/carbon/human/L in GLOB.player_list)
-				if(L.stat >= HARD_CRIT || L.sanity_lost || z != L.z) // Dead or in hard crit, insane, or on a different Z level.
+				if(L.stat >= HARD_CRIT || z != L.z) // Dead, in hard crit or on a different Z level.
 					continue
 				potentialghostbearer += L
 			StartHaunting(pick(potentialghostbearer))
@@ -251,25 +269,36 @@
 // Haunting Mechanics
 /mob/living/simple_animal/hostile/abnormality/penitentgirl/proc/StartHaunting(mob/living/carbon/human/ghostbearer)
 	haunting = TRUE
-	to_chat(ghostbearer, span_warning("You feel an ominous presence."))
-	ghostbearer.apply_status_effect(STATUS_EFFECT_PENITENCE, src, mood)
+	switch(mood)
+		if(0)
+			to_chat(ghostbearer, span_warning("PLACEHOLDER BAD!"))
+		if(1)
+			to_chat(ghostbearer, span_info("PLACEHOLDER NEUTRAL!"))
+		if(2)
+			to_chat(ghostbearer, span_nicegreen("PLACEHOLDER GOOD!"))
+	spooky = ghostbearer.apply_status_effect(STATUS_EFFECT_PENITENCE, src, mood)
 	haunted = ghostbearer
 	forceMove(ghostbearer)
-	return
+	if(spooky)
+		return TRUE
+	return FALSE
 
 /mob/living/simple_animal/hostile/abnormality/penitentgirl/proc/StopHaunting(mob/living/carbon/human/ghostbearer = haunted)
 	haunting = FALSE
 	if(ghostbearer)
 		switch(mood)
+			if(-1)
+				to_chat(ghostbearer, span_nicegreen("The voices subside, your head stops hurting and your thoughts become clearer. You are safe."))
 			if(0)
 				to_chat(ghostbearer, span_nicegreen("The ominous presence stops following your every move. You feel safer."))
 			if(1)
-				to_chat(ghostbearer, span_info("You feel like a weight has been lifted from your shoulders."))
+				to_chat(ghostbearer, span_info("You feel like a weight has beenlifted from your shoulders."))
 			if(2)
 				to_chat(ghostbearer, span_warning("The spirit bids you goodbye as she returns to her containment cell. You feel a bit sad."))
 	datum_reference.qliphoth_change(start_qliphoth)
 	EvilAxeDrop(ghostbearer)
 	haunted = null
+	mood = clamp((mood - 1), min_mood, max_mood)
 	qdel(src)
 	return
 
@@ -297,8 +326,8 @@
 /datum/status_effect/penitence
 	id = "penitence"
 	status_type = STATUS_EFFECT_UNIQUE
-	duration = 3 MINUTES // 18 ticks, get fucked if in bad mood, its nice if in good mood.
-	tick_interval = 10 SECONDS
+	duration = 3 MINUTES // 36 ticks, get fucked if in bad mood, its nice if in good mood.
+	tick_interval = 5 SECONDS
 	on_remove_on_mob_delete = TRUE
 	alert_type = /atom/movable/screen/alert/status_effect/penitence
 
@@ -334,19 +363,19 @@
 			to_chat(possessed, span_userdanger("Your sanity is crumbling apart!"))
 			prudence_change = -50 // Holy fuck.
 			temperance_change = -30
-			sanity_change = 0.25 // 25% of max sanity damage per tick, smile!
-			duration = 1.5 MINUTES // Halved duration (9 ticks), I am not a monster.
+			sanity_change = 0.125 // 12.5% of max sanity damage per tick, smile!
+			duration = 1.5 MINUTES // Halved duration (18 ticks), I am not a monster.
 		if(0) // Bad mood haunting.
 			prudence_change = -20 // One full level, fuck you.
 			temperance_change = -10 // Half a level, half fuck you.
-			sanity_change = 0.1 // 10% of max sanity damage per tick, fuck you.
+			sanity_change = 0.05 // 5% of max sanity damage per tick, fuck you.
 		if(1) // Neutral mood haunting.
 			prudence_change = 5
 			temperance_change = -10
 		if(2) // Good mood haunting
 			prudence_change = 20
 			temperance_change = 10
-			sanity_change = -0.1 // 10% of max sanity heal per tick, <3.
+			sanity_change = -0.05 // 5% of max sanity heal per tick, <3.
 	possessed.adjust_attribute_buff(PRUDENCE_ATTRIBUTE, prudence_change) // Changes your max sanity
 	possessed.adjust_attribute_buff(TEMPERANCE_ATTRIBUTE, temperance_change) // Changes your workrates (lol)
 	RegisterSignal(possessed, COMSIG_HUMAN_INSANE, PROC_REF(StartPenitence))
@@ -371,21 +400,20 @@
 	UnregisterSignal(possessed, COMSIG_HUMAN_INSANE, PROC_REF(Penitence))
 	QDEL_NULL(possessed.ai_controller)
 	duration = -1 // This shit not gonna end until you go die or become sane again.
-	ghost.mood -= 1 // It drains her to deal with your insanity too.
 	switch(attachment_level)
 		if(-1)
 			ghost.OverwhelmingDesire(possessed)
 			possessed.ai_controller = /datum/ai_controller/insane/red_possess/penitent_sanguine
 			possessed.apply_status_effect(/datum/status_effect/panicked_type/penitence/sanguine)
-			possessed.visible_message(span_bolddanger("Crimson shoes suddenly materialize in [p_their()] feet, from where did [p_they()] get that axe?!"))
+			possessed.visible_message(span_bolddanger("Crimson shoes suddenly materialize in [possessed.p_their()] feet, from where did [possessed.p_they()] get that axe?!"))
 		if(0)
-			possessed.ai_controller = /datum/ai_controller/insane/wander/cinderella // PLACEHOOOOOLDER
-			possessed.apply_status_effect(/datum/status_effect/panicked_type/penitence)
-			possessed.visible_message(span_warning("Reddish shoes suddenly materialize in [p_their()] feet and they start laughing maniacally"))
+			possessed.ai_controller = /datum/ai_controller/insane/wander/penitent_reddish // PLACEHOOOOOLDER
+			possessed.apply_status_effect(/datum/status_effect/panicked_type/penitence/penitent_reddish)
+			possessed.visible_message(span_warning("Reddish shoes suddenly materialize in [possessed.p_their()] feet and they begin laughing maniacally!"))
 		if(1)
 			possessed.ai_controller = /datum/ai_controller/insane/penitence
 			possessed.apply_status_effect(/datum/status_effect/panicked_type/penitence)
-			possessed.visible_message(span_warning("Worn-out shoes suddenly materialize in [p_their()] feet...are those bloodstains?"))
+			possessed.visible_message(span_warning("Worn-out shoes suddenly materialize in [possessed.p_their()] feet...are those bloodstains?"))
 		if(2)
 			possessed.ai_controller = /datum/ai_controller/insane/penitence/contrition
 			possessed.apply_status_effect(/datum/status_effect/panicked_type/penitence)
@@ -578,7 +606,18 @@
 	if(S.penitent)
 		S.RemovePenitence() // This handles what happens after resanning a possessed person.
 
-// Bad insane status effect
+/datum/ai_controller/insane/wander/penitent_reddish
+	lines_type = /datum/ai_behavior/say_line/cinderella // PLACEHOLDER
+
+/datum/status_effect/panicked_type/penitence/penitent_reddish
+	icon = "penitence"
+
+/datum/status_effect/panicked_type/penitence/penitent_reddish/tick()
+	. = ..()
+	var/mob/living/carbon/human/status_holder = owner
+	status_holder.emote("spin")
+
+// VERY bad insane status effect
 /datum/status_effect/panicked_type/penitence/sanguine
 	icon = "penitence"
 	shoes = "red_shoes"
